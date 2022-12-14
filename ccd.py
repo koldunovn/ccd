@@ -45,7 +45,7 @@ def get_variable_periods(variables, idata):
         variable_periods[variable]["start"] = data_in.time[0].values
         variable_periods[variable]["end"] = data_in.time[-1].values
         data_in.close()
-    console.print(variable_periods)
+    # console.print(variable_periods)
     return variable_periods
 
 
@@ -135,14 +135,12 @@ def ccd(args=None):
     )
 
     parser.add_argument(
-        "--box",
-        "-b",
+        "--variables",
+        "-v",
         type=str,
-        default="-180.0, 180.0, -80.0, 90.0",
-        help="Several options are available:\
-            - Map boundaries in -180 180 -90 90 format that will be used for interpolation.\
-            - Use one of the predefined regions. Available: gs (Golf Stream), \
-                trop (Atlantic Tropics), arctic, gulf (also Golf Stream, but based on Mercator projection.)\))",
+        default=None,
+        help="List of variables to be converted. If not specified, all variables in the input folder will be converted.\
+        Example: -v \"temp, salt, u, v, w\""
     )
 
     args = parser.parse_args()
@@ -151,7 +149,12 @@ def ccd(args=None):
     num_items = args.num_items
     time_unit = args.time_unit
 
-    variables = get_variables(idata)
+    if args.variables is None:
+        variables = get_variables(idata)
+    else:
+        variables = [x.strip() for x in args.variables.split(",")]
+    
+    console.print(variables)
     variable_periods = get_variable_periods(variables, idata)
 
     for variable in track(
