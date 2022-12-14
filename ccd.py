@@ -110,6 +110,42 @@ def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=
 
     return month_chunks, year_chunks
 
+def remove_repeated_variables(variables, variable_periods, idata, odata):
+    variables_out = get_variables(odata)
+    variables_out_periods = get_variable_periods(variables_out, odata)
+    console.print(f"variables_out: {variables_out}")
+    console.print(f"variables: {variables}")
+    toremove = []
+    for variable in variables:
+        if variable in variables_out:
+            if (
+                variable_periods[variable]["start"]
+                == variables_out_periods[variable]["start"]
+                and variable_periods[variable]["end"]
+                == variables_out_periods[variable]["end"]
+            ):
+                # console.print(f"Start and end times are the same, we will remove [bold]{variable}[/bold] from the list", style="red")
+                toremove.append(variable)
+            elif (
+                variable_periods[variable]["start"]
+                == variables_out_periods[variable]["start"]
+                and variable_periods[variable]["end"]
+                > variables_out_periods[variable]["end"]
+            ):
+                variable_periods[variable]["start"] = variables_out_periods[
+                    variable
+                ]["end"]
+                console.print(f"We will update the start of {variable}")
+                console.print(variable_periods[variable]["start"])
+                console.print(variable_periods[variable]["end"])
+            else:
+                console.print(f"We will not remove {variable}")
+        else:
+            console.print("Variable not in output folder")
+    
+    console.print(f"variables fo be removed {toremove}")
+    variables = [x for x in variables if x not in toremove]
+    return variables, variable_periods
 
 def ccd(args=None):
     parser = argparse.ArgumentParser(
@@ -139,8 +175,8 @@ def ccd(args=None):
         "-v",
         type=str,
         default=None,
-        help="List of variables to be converted. If not specified, all variables in the input folder will be converted.\
-        Example: -v \"temp, salt, u, v, w\""
+        help='List of variables to be converted. If not specified, all variables in the input folder will be converted.\
+        Example: -v "temp, salt, u, v, w"',
     )
 
     args = parser.parse_args()
@@ -153,9 +189,13 @@ def ccd(args=None):
         variables = get_variables(idata)
     else:
         variables = [x.strip() for x in args.variables.split(",")]
-    
+
     console.print(variables)
     variable_periods = get_variable_periods(variables, idata)
+
+    dont_repeat = True
+    if dont_repeat:
+        variables, variable_periods = remove_repeated_variables(variables, variable_periods, idata, odata)
 
     for variable in track(
         variables[:], console=console, description="Converting files"
@@ -192,7 +232,6 @@ def ccd(args=None):
             f"Var: {variable}, start: {np.datetime_as_string(start, unit='D').replace('-', '')}, end: {np.datetime_as_string(stop, unit='D').replace('-', '')}",
             style="bold green",
         )
-
 
 if __name__ == "__main__":
     # args = parser.parse_args()
