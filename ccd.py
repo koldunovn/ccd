@@ -110,6 +110,7 @@ def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=
 
     return month_chunks, year_chunks
 
+
 def remove_repeated_variables(variables, variable_periods, idata, odata):
     variables_out = get_variables(odata)
     variables_out_periods = get_variable_periods(variables_out, odata)
@@ -132,9 +133,9 @@ def remove_repeated_variables(variables, variable_periods, idata, odata):
                 and variable_periods[variable]["end"]
                 > variables_out_periods[variable]["end"]
             ):
-                variable_periods[variable]["start"] = variables_out_periods[
-                    variable
-                ]["end"]
+                variable_periods[variable]["start"] = variables_out_periods[variable][
+                    "end"
+                ] + np.timedelta64(1, "D")
                 console.print(f"We will update the start of {variable}")
                 console.print(variable_periods[variable]["start"])
                 console.print(variable_periods[variable]["end"])
@@ -142,10 +143,11 @@ def remove_repeated_variables(variables, variable_periods, idata, odata):
                 console.print(f"We will not remove {variable}")
         else:
             console.print("Variable not in output folder")
-    
+
     console.print(f"variables fo be removed {toremove}")
     variables = [x for x in variables if x not in toremove]
     return variables, variable_periods
+
 
 def ccd(args=None):
     parser = argparse.ArgumentParser(
@@ -178,6 +180,11 @@ def ccd(args=None):
         help='List of variables to be converted. If not specified, all variables in the input folder will be converted.\
         Example: -v "temp, salt, u, v, w"',
     )
+    parser.add_argument(
+        "--repeat",
+        action="store_true",
+        help="If specified, repeated variables will be converted again.",
+    )
 
     args = parser.parse_args()
     idata = args.input
@@ -193,9 +200,11 @@ def ccd(args=None):
     console.print(variables)
     variable_periods = get_variable_periods(variables, idata)
 
-    dont_repeat = True
-    if dont_repeat:
-        variables, variable_periods = remove_repeated_variables(variables, variable_periods, idata, odata)
+
+    if args.repeat is False:
+        variables, variable_periods = remove_repeated_variables(
+            variables, variable_periods, idata, odata
+        )
 
     for variable in track(
         variables[:], console=console, description="Converting files"
@@ -232,6 +241,7 @@ def ccd(args=None):
             f"Var: {variable}, start: {np.datetime_as_string(start, unit='D').replace('-', '')}, end: {np.datetime_as_string(stop, unit='D').replace('-', '')}",
             style="bold green",
         )
+
 
 if __name__ == "__main__":
     # args = parser.parse_args()
