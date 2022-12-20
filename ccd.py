@@ -7,11 +7,14 @@ from numcodecs import Blosc
 from dask.diagnostics import ProgressBar
 import numpy as np
 
-# from tqdm import tqdm
+from tqdm import tqdm
 from rich.console import Console
 from rich.progress import track
 from rich.traceback import install
 import argparse
+from joblib import Parallel, delayed
+import dask
+from dask.distributed import Client, progress
 
 install()
 
@@ -39,7 +42,8 @@ def get_variables(idata):
 
 def get_variable_periods(variables, idata):
     variable_periods = {}
-    for variable in track(variables, console=console):
+    # for variable in track(variables, console=console):
+    for variable in tqdm(variables):
         variable_periods[variable] = {}
         data_in = xr.open_mfdataset(f"{idata}/{variable}.*.nc", combine="by_coords")
         variable_periods[variable]["start"] = data_in.time[0].values
@@ -149,6 +153,23 @@ def remove_repeated_variables(variables, variable_periods, idata, odata):
     return variables, variable_periods
 
 
+def convert_data_monthly(variable, month, year, idata, odata, method="netcdf"):
+    start_mon = f"{year[0]}-{str(month[0]).zfill(2)}"
+    stop_mon = f"{year[-1]}-{str(month[-1]).zfill(2)}"
+    print(f"Variable: {variable}, start_mon: {start_mon} stop_mon: {stop_mon}")
+    convert_data(variable, start_mon, stop_mon, idata, odata, method=method)
+    return 1
+
+
+# @dask.delayed
+def convert_data_yearly(variable, year, idata, odata, method="netcdf"):
+    start_year = f"{year[0]}"
+    stop_year = f"{year[-1]}"
+    print(f"Variable: {variable}, start_year: {start_year} stop_year: {stop_year}")
+    convert_data(variable, start_year, stop_year, idata, odata, method=method)
+    return 1
+
+
 def ccd(args=None):
     parser = argparse.ArgumentParser(
         prog="ccd (compress climate data)",
@@ -186,11 +207,31 @@ def ccd(args=None):
         help="If specified, repeated variables will be converted again.",
     )
 
+    parser.add_argument(
+        "--parallelism",
+        "-p",
+        type=str,
+        default="serial",
+        help='Parallelism. Available options: "serial", "joblib", "dask".',
+    )
+
+    parser.add_argument(
+        "--workers",
+        "-w",
+        type=int,
+        default=4,
+        help='Number of workers to be used. Only used if parallelism is "joblib" or "dask".',
+    )
+
     args = parser.parse_args()
     idata = args.input
     odata = args.output
     num_items = args.num_items
     time_unit = args.time_unit
+    parallelism = args.parallelism
+
+    if parallelism == "dask":
+        client = Client(threads_per_worker=1, n_workers=args.workers)
 
     if args.variables is None:
         variables = get_variables(idata)
@@ -200,15 +241,15 @@ def ccd(args=None):
     console.print(variables)
     variable_periods = get_variable_periods(variables, idata)
 
-
     if args.repeat is False:
         variables, variable_periods = remove_repeated_variables(
             variables, variable_periods, idata, odata
         )
 
-    for variable in track(
-        variables[:], console=console, description="Converting files"
-    ):
+    # for variable in track(
+    #     variables[:], console=console, description="Converting files"
+    # ):
+    for variable in tqdm(variables[:]):
         start = variable_periods[variable]["start"]
         stop = variable_periods[variable]["end"]
 
@@ -216,22 +257,54 @@ def ccd(args=None):
             months, years = define_periods(
                 variable, start, stop, idata, time_unit=time_unit, num_items=num_items
             )
-            for month, year in zip(months, years):
-                start_mon = f"{year[0]}-{str(month[0]).zfill(2)}"
-                stop_mon = f"{year[-1]}-{str(month[-1]).zfill(2)}"
-                convert_data(
-                    variable, start_mon, stop_mon, idata, odata, method="netcdf"
+            if parallelism == "serial":
+                for month, year in zip(months, years):
+                    convert_data_monthly(
+                        variable, month, year, idata, odata, method="netcdf"
+                    )
+            elif parallelism == "joblib":
+                Parallel(n_jobs=args.workers)(
+                    delayed(convert_data_monthly)(
+                        variable, month, year, idata, odata, method="netcdf"
+                    )
+                    for month, year in zip(months, years)
                 )
+            elif parallelism == "dask":
+                results = []
+                for month, year in zip(months, years):
+                    x = dask.delayed(convert_data_monthly)(
+                        variable, month, year, idata, odata, method="netcdf"
+                    )
+                    results.append(x)
+                dask.compute(*results)
+
         elif time_unit == "yearly":
             _, years = define_periods(
                 variable, start, stop, idata, time_unit=time_unit, num_items=num_items
             )
-            for year in years:
-                start_year = f"{year[0]}"
-                stop_year = f"{year[-1]}"
-                convert_data(
-                    variable, start_year, stop_year, idata, odata, method="netcdf"
+            if parallelism == "serial":
+                for year in years:
+                    convert_data_yearly(variable, year, idata, odata, method="netcdf")
+                # convert_data(
+                #     variable, start_year, stop_year, idata, odata, method="netcdf"
+                # )
+            elif parallelism == "joblib":
+                Parallel(n_jobs=args.workers)(
+                    delayed(convert_data_yearly)(
+                        variable, year, idata, odata, method="netcdf"
+                    )
+                    for year in years
                 )
+            elif parallelism == "dask":
+                results = []
+                for year in years:
+                    x = dask.delayed(convert_data_yearly)(
+                        variable, year, idata, odata, method="netcdf"
+                    )
+                    results.append(x)
+                results = dask.compute(*results)
+                print(results)
+
         elif time_unit == "whole":
             convert_data(variable, start, stop, idata, odata, method="netcdf")
         else:
@@ -241,6 +314,9 @@ def ccd(args=None):
             f"Var: {variable}, start: {np.datetime_as_string(start, unit='D').replace('-', '')}, end: {np.datetime_as_string(stop, unit='D').replace('-', '')}",
             style="bold green",
         )
+
+        if parallelism == "dask":
+            client.close()
 
 
 if __name__ == "__main__":
