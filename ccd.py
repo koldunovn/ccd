@@ -34,6 +34,8 @@ def get_variables(idata):
     for ffile in files:
         if "fesom.mesh.diag.nc" in ffile:
             continue
+        elif "blowup" in ffile:
+            continue
         varname = os.path.basename(ffile).split(".")[0]
         if varname not in variables:
             variables.append(varname)
