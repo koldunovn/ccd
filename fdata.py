@@ -110,7 +110,7 @@ class FileData:
         # for variable in track(variables, console=console):
         pbar = tqdm(self.variables, leave=False, ncols=100, colour="green")
         for variable in pbar:
-            pbar.set_description("Processing %s" % variable)
+            pbar.set_description(f"Processing {variable:<11}")
             variable_periods[variable] = {}
             data_in = xr.open_mfdataset(
                 self.files_for_variables[variable], combine="by_coords"
