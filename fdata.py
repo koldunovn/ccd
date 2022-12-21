@@ -65,7 +65,13 @@ class FileData:
         self.files = self.get_files()
         self.variables = self.get_variables()
         self.files_for_variables = self.get_files_for_variables()
-        self.varaible_periods = self.get_variable_periods()
+        (
+            self.varaible_periods,
+            self.variable_steps,
+            self.variable_nsteps,
+            self.variable_vlevels,
+            self.variable_dof,
+        ) = self.get_variable_periods()
 
     def get_files(self):
         all_files = glob.glob(self.folder + f"/{self.naming_template}.{self.file_type}")
@@ -97,17 +103,46 @@ class FileData:
 
     def get_variable_periods(self):
         variable_periods = {}
+        variable_steps = {}
+        variable_nsteps = {}
+        variable_vlevels = {}
+        variable_dof = {}
         # for variable in track(variables, console=console):
-        for variable in tqdm(self.variables):
+        pbar = tqdm(self.variables, leave=False, ncols=100, colour="green")
+        for variable in pbar:
+            pbar.set_description("Processing %s" % variable)
             variable_periods[variable] = {}
             data_in = xr.open_mfdataset(
                 self.files_for_variables[variable], combine="by_coords"
             )
             variable_periods[variable]["start"] = data_in.time[0].values
             variable_periods[variable]["end"] = data_in.time[-1].values
+            variable_steps[variable] = data_in.time[1].values - data_in.time[0].values
+            variable_nsteps[variable] = len(data_in.time)
+
+            if "nz" in data_in.dims:
+                variable_vlevels[variable] = len(data_in.nz)
+            elif "nz1" in data_in.dims:
+                variable_vlevels[variable] = len(data_in.nz1)
+            else:
+                variable_vlevels[variable] = 1
+
+            if "elem" in data_in.dims:
+                variable_dof[variable] = len(data_in.elem)
+            elif "nod2" in data_in.dims:
+                variable_dof[variable] = len(data_in.nod2)
+            else:
+                variable_dof[variable] = 0
+
             data_in.close()
         # console.print(variable_periods)
-        return variable_periods
+        return (
+            variable_periods,
+            variable_steps,
+            variable_nsteps,
+            variable_vlevels,
+            variable_dof,
+        )
 
     def get_variable_size(self, variable):
         return get_list_size(self.files_for_variables[variable])
@@ -115,7 +150,7 @@ class FileData:
     @cached_property
     def sizes(self):
         sizes = {}
-        for variable in tqdm(self.variables):
+        for variable in self.variables:
             sizes[variable] = self.get_variable_size(variable)
         self.sizes = sizes
         return sizes
@@ -133,10 +168,14 @@ class FileData:
 
     def describe(self):
         #
-        table = Table(title="Variables in folder")
+        table = Table(title=f"Variables in {self.folder} folder")
         table.add_column("Variable", justify="right", style="cyan", no_wrap=True)
         table.add_column("Size", style="magenta")
         table.add_column("Range", justify="right", style="green")
+        table.add_column("Steps", justify="right", style="green")
+        table.add_column("Output FQC", justify="right", style="green")
+        table.add_column("Levels", justify="right", style="blue")
+        table.add_column("DOF", justify="right", style="blue")
         for variable in self.variables:
             start_string = np.datetime_as_string(
                 self.varaible_periods[variable]["start"], unit="m"
@@ -148,6 +187,10 @@ class FileData:
                 f"{variable}",
                 f"{self.sizes[variable]/1e9:.2f} GB",
                 f"{start_string} - {stop_string}",
+                f"{self.variable_nsteps[variable]}",
+                f"{self.variable_steps[variable].astype('timedelta64[D]')}",
+                f"{self.variable_vlevels[variable]}",
+                f"{self.variable_dof[variable]/1e6:.3f} M",
             )
             # console.print(f"{variable}: {self.sizes[variable]/1e9:.2f} GB")
         console.print(table)
@@ -155,7 +198,51 @@ class FileData:
         # return
 
 
-ifolder = "/Users/nkolduno/PYTHON/DATA/LCORE/"
-data = FileData(ifolder)
-data.describe()
+def describe():
+    parser = argparse.ArgumentParser(
+        prog="Describe folder",
+        description="Describe climate data in the folder",
+    )
+    parser.add_argument(
+        "folder", type=str, default="./", help="Path folder with input files"
+    )
+    # parser.set_defaults(func=describe)
+    parser.add_argument("--file_type", "-t", type=str, default="nc", help="File type")
+    parser.add_argument(
+        "--naming_template",
+        "-n",
+        type=str,
+        default="*.fesom.????",
+        help="Naming template",
+    )
+    parser.add_argument(
+        "--separator", "-s", type=str, default=".", help="Separator between variables"
+    )
+    parser.add_argument(
+        "--variable_position",
+        "-p",
+        type=int,
+        default=0,
+        help="Position of variable in the file name",
+    )
+
+    args = parser.parse_args()
+    data = FileData(
+        args.folder,
+        args.file_type,
+        args.naming_template,
+        args.separator,
+        args.variable_position,
+    )
+    data.describe()
+
+
+# ifolder = "/Users/nkolduno/PYTHON/DATA/LCORE/"
+# data = FileData(ifolder)
+# data.describe()
 # print(data.total_size)
+
+if __name__ == "__main__":
+    # args = parser.parse_args()
+    # args.func(args)
+    describe()
