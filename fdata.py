@@ -188,7 +188,7 @@ class FileData:
                 f"{self.sizes[variable]/1e9:.2f} GB",
                 f"{start_string} - {stop_string}",
                 f"{self.variable_nsteps[variable]}",
-                f"{self.variable_steps[variable].astype('timedelta64[D]')}",
+                f"{self.variable_steps[variable].astype('timedelta64[h]').astype('int')/24:.3f} days",
                 f"{self.variable_vlevels[variable]}",
                 f"{self.variable_dof[variable]/1e6:.3f} M",
             )
