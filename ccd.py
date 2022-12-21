@@ -14,7 +14,7 @@ from rich.traceback import install
 import argparse
 from joblib import Parallel, delayed
 import dask
-from dask.distributed import Client, progress
+from dask.distributed import Client
 
 install()
 
