@@ -15,6 +15,7 @@ import argparse
 from joblib import Parallel, delayed
 import dask
 from dask.distributed import Client
+import hdf5plugin
 
 install()
 
@@ -24,6 +25,8 @@ netcdf_compressor = {
     "zlib": True,
     "complevel": 1,
 }
+netcdf_compressor_lz4 = {'compression': 32004, 'compression_opts': (0,)}
+netcdf_compressor_zstd = {'compression': 32015, 'compression_opts': (3,)}
 
 
 def get_variables(idata):
@@ -86,6 +89,21 @@ def convert_data(variable, start, stop, idata, odata, method="netcdf"):
             f"{odata}/{variable}.fesom.{start_string}_{stop_string}.nc",
             encoding={variable: netcdf_compressor},
         )
+    elif method == "netcdf_lz4":
+        data_selected.to_netcdf(
+            f"{odata}/{variable}.fesom.{start_string}_{stop_string}.nc",
+            mode="w",engine="h5netcdf",unlimited_dims="time", 
+            encoding={variable: netcdf_compressor_lz4},
+        )
+    elif method == "netcdf_zstd":
+        data_selected.to_netcdf(
+            f"{odata}/{variable}.fesom.{start_string}_{stop_string}.nc",
+            mode="w",engine="h5netcdf",unlimited_dims="time", 
+            encoding={variable: netcdf_compressor_lz4},
+        )
+    else:
+        console.print("Method not supported", style="red")
+        sys.exit()
 
 
 def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=1):
@@ -224,6 +242,13 @@ def ccd(args=None):
         default=4,
         help='Number of workers to be used. Only used if parallelism is "joblib" or "dask".',
     )
+    parser.add_argument(
+        "--method",
+        "-m",
+        type=str,
+        default="netcdf",
+        help='Possible methods are "netcdf", "netcdf_lz4", "netcdf_zstd".',
+    )
 
     args = parser.parse_args()
     idata = args.input
@@ -231,6 +256,7 @@ def ccd(args=None):
     num_items = args.num_items
     time_unit = args.time_unit
     parallelism = args.parallelism
+    method = args.method
 
     if parallelism == "dask":
         client = Client(threads_per_worker=1, n_workers=args.workers)
@@ -262,12 +288,12 @@ def ccd(args=None):
             if parallelism == "serial":
                 for month, year in zip(months, years):
                     convert_data_monthly(
-                        variable, month, year, idata, odata, method="netcdf"
+                        variable, month, year, idata, odata, method=method
                     )
             elif parallelism == "joblib":
                 Parallel(n_jobs=args.workers)(
                     delayed(convert_data_monthly)(
-                        variable, month, year, idata, odata, method="netcdf"
+                        variable, month, year, idata, odata, method=method
                     )
                     for month, year in zip(months, years)
                 )
@@ -275,7 +301,7 @@ def ccd(args=None):
                 results = []
                 for month, year in zip(months, years):
                     x = dask.delayed(convert_data_monthly)(
-                        variable, month, year, idata, odata, method="netcdf"
+                        variable, month, year, idata, odata, method=method
                     )
                     results.append(x)
                 dask.compute(*results)
@@ -286,14 +312,14 @@ def ccd(args=None):
             )
             if parallelism == "serial":
                 for year in years:
-                    convert_data_yearly(variable, year, idata, odata, method="netcdf")
+                    convert_data_yearly(variable, year, idata, odata, method=method)
                 # convert_data(
                 #     variable, start_year, stop_year, idata, odata, method="netcdf"
                 # )
             elif parallelism == "joblib":
                 Parallel(n_jobs=args.workers)(
                     delayed(convert_data_yearly)(
-                        variable, year, idata, odata, method="netcdf"
+                        variable, year, idata, odata, method=method
                     )
                     for year in years
                 )
@@ -301,14 +327,14 @@ def ccd(args=None):
                 results = []
                 for year in years:
                     x = dask.delayed(convert_data_yearly)(
-                        variable, year, idata, odata, method="netcdf"
+                        variable, year, idata, odata, method=method
                     )
                     results.append(x)
                 results = dask.compute(*results)
                 print(results)
 
         elif time_unit == "whole":
-            convert_data(variable, start, stop, idata, odata, method="netcdf")
+            convert_data(variable, start, stop, idata, odata, method=method)
         else:
             raise ValueError("Frequency not defined")
 
