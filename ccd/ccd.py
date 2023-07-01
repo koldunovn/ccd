@@ -25,14 +25,22 @@ netcdf_compressor = {
     "zlib": True,
     "complevel": 1,
 }
-netcdf_compressor_lz4 = {'compression': 32004, 'compression_opts': (0,)}
-netcdf_compressor_zstd = {'compression': 32015, 'compression_opts': (3,)}
+netcdf_compressor_lz4 = {"compression": 32004, "compression_opts": (0,)}
+netcdf_compressor_zstd = {"compression": 32015, "compression_opts": (3,)}
 
 
 def get_variables(idata):
+    """
+    Returns a list of variables found in the given input directory.
+
+    Args:
+    - idata (str): The input directory path.
+
+    Returns:
+    - variables (list): A list of variable names found in the input directory.
+    """
     files = glob.glob(f"{idata}/*.nc")
     files.sort()
-    # print(files)
     variables = []
     for ffile in files:
         if "fesom.mesh.diag.nc" in ffile:
@@ -46,31 +54,67 @@ def get_variables(idata):
 
 
 def get_variable_periods(variables, idata):
+    """
+    Returns a dictionary containing the start and end periods for each variable in the given input directory.
+
+    Args:
+    - variables (list): A list of variable names found in the input directory.
+    - idata (str): The input directory path.
+
+    Returns:
+    - variable_periods (dict): A dictionary containing the start and end periods for each variable in the input directory.
+    """
     variable_periods = {}
-    # for variable in track(variables, console=console):
     for variable in tqdm(variables):
         variable_periods[variable] = {}
         data_in = xr.open_mfdataset(f"{idata}/{variable}.*.nc", combine="by_coords")
         variable_periods[variable]["start"] = data_in.time[0].values
         variable_periods[variable]["end"] = data_in.time[-1].values
         data_in.close()
-    # console.print(variable_periods)
     return variable_periods
 
 
-def select_data(variable, start, stop, idata):
+import xarray as xr
+import numpy as np
 
+
+def select_data(variable, start, stop, idata):
+    """
+    Selects data for a given variable and time range from the input directory.
+
+    Args:
+    - variable (str): The name of the variable to select.
+    - start (str): The start time of the data to select in the format 'YYYY-MM-DD'.
+    - stop (str): The end time of the data to select in the format 'YYYY-MM-DD'.
+    - idata (str): The input directory path.
+
+    Returns:
+    - data_selected (xarray.Dataset): The selected data as an xarray dataset.
+    """
     data2 = xr.open_mfdataset(
         f"{idata}/{variable}.*nc"
     )  # , chunks = variables[variable])
     data_selected = data2.sel(time=slice(start, stop))
-    # console.log(log_locals=True)
 
     return data_selected
 
 
 def convert_data(variable, start, stop, idata, odata, method="netcdf"):
+    """
+    Converts selected data for a given variable and time range from the input directory to
+    a specified format and saves it to the output directory.
 
+    Args:
+    - variable (str): The name of the variable to select.
+    - start (str): The start time of the data to select in the format 'YYYY-MM-DD'.
+    - stop (str): The end time of the data to select in the format 'YYYY-MM-DD'.
+    - idata (str): The input directory path.
+    - odata (str): The output directory path.
+    - method (str): The format to convert the data to. Can be 'zarr', 'netcdf', 'netcdf_lz4', or 'netcdf_zstd'. Defaults to 'netcdf'.
+
+    Returns:
+    - None
+    """
     data_selected = select_data(variable, start, stop, idata)
     start_string = np.datetime_as_string(
         data_selected.time[0].values, unit="D"
@@ -92,13 +136,17 @@ def convert_data(variable, start, stop, idata, odata, method="netcdf"):
     elif method == "netcdf_lz4":
         data_selected.to_netcdf(
             f"{odata}/{variable}.fesom.{start_string}_{stop_string}.nc",
-            mode="w",engine="h5netcdf",unlimited_dims="time", 
+            mode="w",
+            engine="h5netcdf",
+            unlimited_dims="time",
             encoding={variable: netcdf_compressor_lz4},
         )
     elif method == "netcdf_zstd":
         data_selected.to_netcdf(
             f"{odata}/{variable}.fesom.{start_string}_{stop_string}.nc",
-            mode="w",engine="h5netcdf",unlimited_dims="time", 
+            mode="w",
+            engine="h5netcdf",
+            unlimited_dims="time",
             encoding={variable: netcdf_compressor_lz4},
         )
     else:
@@ -106,8 +154,24 @@ def convert_data(variable, start, stop, idata, odata, method="netcdf"):
         sys.exit()
 
 
-def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=1):
+import xarray as xr
+import numpy as np
 
+def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=1):
+    """
+    Define time periods for a given variable based on start and stop dates.
+
+    Args:
+        variable (str): Name of the variable to define time periods for.
+        start (str): Start date of the time period in the format 'YYYY-MM-DD'.
+        stop (str): End date of the time period in the format 'YYYY-MM-DD'.
+        idata (str): Path to the input data directory.
+        time_unit (str, optional): Time unit to use for defining periods. Can be 'monthly' or 'yearly'. Defaults to 'monthly'.
+        num_items (int, optional): Number of time units to include in each period. Defaults to 1.
+
+    Returns:
+        tuple: A tuple containing two lists, one for the month chunks and one for the year chunks.
+    """
     data2 = xr.open_mfdataset(
         f"{idata}/{variable}.*nc"
     )  # , chunks = variables[variable])
@@ -136,6 +200,18 @@ def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=
 
 
 def remove_repeated_variables(variables, variable_periods, idata, odata):
+    """
+    Remove variables from the input list that have already been processed and saved in the output directory.
+
+    Args:
+        variables (list): List of variable names to check for duplicates.
+        variable_periods (dict): Dictionary containing the start and end dates for each variable in the input directory.
+        idata (str): Path to the input data directory.
+        odata (str): Path to the output data directory.
+
+    Returns:
+        tuple: A tuple containing the updated list of variables and the updated dictionary of variable periods.
+    """
     variables_out = get_variables(odata)
     variables_out_periods = get_variable_periods(variables_out, odata)
     console.print(f"variables_out: {variables_out}")
