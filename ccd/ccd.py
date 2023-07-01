@@ -74,10 +74,6 @@ def get_variable_periods(variables, idata):
     return variable_periods
 
 
-import xarray as xr
-import numpy as np
-
-
 def select_data(variable, start, stop, idata):
     """
     Selects data for a given variable and time range from the input directory.
@@ -153,9 +149,6 @@ def convert_data(variable, start, stop, idata, odata, method="netcdf"):
         console.print("Method not supported", style="red")
         sys.exit()
 
-
-import xarray as xr
-import numpy as np
 
 def define_periods(variable, start, stop, idata, time_unit="monthly", num_items=1):
     """
@@ -250,6 +243,20 @@ def remove_repeated_variables(variables, variable_periods, idata, odata):
 
 
 def convert_data_monthly(variable, month, year, idata, odata, method="netcdf"):
+    """
+    Converts monthly data for a given variable from the input directory to the output directory.
+
+    Args:
+        variable (str): Name of the variable to convert.
+        month (list): List of integers representing the months to convert.
+        year (list): List of integers representing the years to convert.
+        idata (str): Path to the input data directory.
+        odata (str): Path to the output data directory.
+        method (str, optional): Method to use for conversion. Defaults to "netcdf".
+
+    Returns:
+        int: 1 if the conversion was successful.
+    """
     start_mon = f"{year[0]}-{str(month[0]).zfill(2)}"
     stop_mon = f"{year[-1]}-{str(month[-1]).zfill(2)}"
     print(f"Variable: {variable}, start_mon: {start_mon} stop_mon: {stop_mon}")
@@ -259,6 +266,19 @@ def convert_data_monthly(variable, month, year, idata, odata, method="netcdf"):
 
 # @dask.delayed
 def convert_data_yearly(variable, year, idata, odata, method="netcdf"):
+    """
+    Converts yearly data for a given variable from the input directory to the output directory.
+
+    Args:
+        variable (str): Name of the variable to convert.
+        year (list): List of integers representing the years to convert.
+        idata (str): Path to the input data directory.
+        odata (str): Path to the output data directory.
+        method (str, optional): Method to use for conversion. Defaults to "netcdf".
+
+    Returns:
+        int: 1 if the conversion was successful.
+    """
     start_year = f"{year[0]}"
     stop_year = f"{year[-1]}"
     print(f"Variable: {variable}, start_year: {start_year} stop_year: {stop_year}")
